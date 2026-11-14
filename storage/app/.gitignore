@@ -1,0 +1,5 @@
+*
+!public/
+!.gitignore
+/storage/app/keys/private.pem
+/storage/app/keys/generate_keys.php
