@@ -19,3 +19,5 @@ yarn-error.log
 /.vscode
 # File rahasia SecureAdmin
 /storage/app/keys/
+# Script migrasi RSA sementara (jangan upload ke GitHub)
+/scripts/migrate_rsa_keys.php

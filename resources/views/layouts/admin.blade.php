@@ -5,9 +5,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
 
-    <title>@yield('title') - SecureAdmin</title>
+    @if(request()->routeIs('dashboard'))
+        <title></title>
+    @else
+        <title>@yield('title') - SecureAdmin</title>
+    @endif
 
-    <!-- Bootstrap 5 -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
           rel="stylesheet">
 
@@ -77,87 +80,163 @@
 
 <body>
 
-    <!-- SIDEBAR -->
     <div class="sidebar">
 
-        <h3>SecureAdmin</h3>
+        @if(request()->routeIs('dashboard'))
 
-        <!-- MENU UNTUK SEMUA PENGGUNA -->
-        <a href="{{ route('dashboard') }}"
-           class="{{ request()->routeIs('dashboard') ? 'active' : '' }}">
-            Dashboard
-        </a>
+            {{-- Teks sidebar dashboard diisi setelah dekripsi --}}
 
-        <a href="{{ route('data.index') }}"
-           class="{{ request()->routeIs('data.*') ? 'active' : '' }}">
-            Manajemen Data
-        </a>
+            <h3 id="sidebar-brand"></h3>
 
-        <!-- MENU KHUSUS ADMIN -->
-        @if(Auth::user()->role === 'admin')
+            <a href="{{ route('dashboard') }}"
+               id="sidebar-dashboard"
+               class="active"></a>
 
-            <a href="{{ route('data.create') }}"
-               class="{{ request()->routeIs('data.create') ? 'active' : '' }}">
-                Tambah Data
+            <a href="{{ route('data.index') }}"
+               id="sidebar-data"></a>
+
+            @if(session('rsa_admin_authenticated') === true)
+
+                <a href="{{ route('data.create') }}"
+                   id="sidebar-add"
+                   style="display: none;"></a>
+
+                <a href="{{ route('encryption.index') }}"
+                   id="sidebar-encryption"
+                   style="display: none;"></a>
+
+                <a href="{{ route('history.index') }}"
+                   id="sidebar-history"
+                   style="display: none;"></a>
+
+            @endif
+
+            <div class="user-info">
+
+                <p class="mb-2" id="sidebar-access-status"></p>
+
+                @if(session('rsa_admin_authenticated') === true)
+
+                    <span id="sidebar-admin-status"
+                          class="badge bg-success mb-3"
+                          style="display: none;"></span>
+
+                    <form method="POST"
+                          action="{{ route('rsa.logout') }}"
+                          id="sidebar-logout-form"
+                          style="display: none;">
+
+                        @csrf
+
+                        <button type="submit"
+                                class="btn btn-danger w-100"
+                                id="sidebar-logout">
+                        </button>
+
+                    </form>
+
+                @else
+
+                    <span id="sidebar-ciphertext-status"
+                          class="badge bg-warning text-dark mb-3"></span>
+
+                    <a href="{{ route('rsa.login') }}"
+                       class="btn btn-light text-dark w-100"
+                       id="sidebar-login">
+                    </a>
+
+                @endif
+
+            </div>
+
+        @else
+
+            {{-- Sidebar normal untuk halaman selain dashboard --}}
+
+            <h3>SecureAdmin</h3>
+
+            <a href="{{ route('dashboard') }}"
+               class="{{ request()->routeIs('dashboard') ? 'active' : '' }}">
+                Dashboard
             </a>
 
-            <a href="{{ route('encryption.index') }}"
-               class="{{ request()->routeIs('encryption.*') ? 'active' : '' }}">
-                Enkripsi Data
+            <a href="{{ route('data.index') }}"
+               class="{{ request()->routeIs('data.*') ? 'active' : '' }}">
+                Manajemen Data
             </a>
 
-            <a href="{{ route('history.index') }}"
-               class="{{ request()->routeIs('history.*') ? 'active' : '' }}">
-                Riwayat Aktivitas
-            </a>
+            @if(session('rsa_admin_authenticated') === true)
+
+                <a href="{{ route('data.create') }}"
+                   class="{{ request()->routeIs('data.create') ? 'active' : '' }}">
+                    Tambah Data
+                </a>
+
+                <a href="{{ route('encryption.index') }}"
+                   class="{{ request()->routeIs('encryption.*') ? 'active' : '' }}">
+                    Enkripsi Data
+                </a>
+
+                <a href="{{ route('history.index') }}"
+                   class="{{ request()->routeIs('history.*') ? 'active' : '' }}">
+                    Riwayat Aktivitas
+                </a>
+
+            @endif
+
+            <div class="user-info">
+
+                <p class="mb-2">Status akses:</p>
+
+                @if(session('rsa_admin_authenticated') === true)
+
+                    <span class="badge bg-success mb-3">
+                        Administrator RSA Terverifikasi
+                    </span>
+
+                    <form method="POST" action="{{ route('rsa.logout') }}">
+                        @csrf
+
+                        <button type="submit" class="btn btn-danger w-100">
+                            Logout RSA
+                        </button>
+                    </form>
+
+                @else
+
+                    <span class="badge bg-warning text-dark mb-3">
+                        Mode Ciphertext
+                    </span>
+
+                    <a href="{{ route('rsa.login') }}"
+                       class="btn btn-light text-dark w-100">
+                        Login dengan Kunci RSA
+                    </a>
+
+                @endif
+
+            </div>
 
         @endif
-
-        <!-- PROFIL UNTUK SEMUA PENGGUNA -->
-        <a href="{{ route('profile.edit') }}"
-           class="{{ request()->routeIs('profile.*') ? 'active' : '' }}">
-            Profil
-        </a>
-
-        <!-- INFORMASI PENGGUNA -->
-        <div class="user-info">
-
-            <p class="mb-1">Login sebagai:</p>
-
-            <strong>{{ Auth::user()->name }}</strong>
-
-            <p class="mt-2">
-                <span class="badge bg-{{ Auth::user()->role === 'admin' ? 'success' : 'info' }}">
-                    {{ Auth::user()->role === 'admin' ? 'Administrator' : 'Pengguna' }}
-                </span>
-            </p>
-
-            <!-- LOGOUT -->
-            <form method="POST" action="{{ route('logout') }}">
-                @csrf
-
-                <button type="submit" class="btn btn-danger w-100">
-                    Logout
-                </button>
-            </form>
-
-        </div>
 
     </div>
 
-    <!-- KONTEN UTAMA -->
     <main class="main-content">
 
-        @if(session('success'))
-            <div class="alert alert-success">
-                {{ session('success') }}
-            </div>
-        @endif
+        @if(!request()->routeIs('dashboard'))
 
-        @if(session('error'))
-            <div class="alert alert-danger">
-                {{ session('error') }}
-            </div>
+            @if(session('success'))
+                <div class="alert alert-success">
+                    {{ session('success') }}
+                </div>
+            @endif
+
+            @if(session('error'))
+                <div class="alert alert-danger">
+                    {{ session('error') }}
+                </div>
+            @endif
+
         @endif
 
         @yield('content')

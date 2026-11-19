@@ -1,1 +1,3 @@
 *.sqlite*
+# Script migrasi RSA sementara (jangan upload ke GitHub)
+/scripts/migrate_rsa_keys.php

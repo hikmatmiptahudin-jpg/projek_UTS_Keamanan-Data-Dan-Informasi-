@@ -6,7 +6,6 @@ use App\Models\AdminData;
 use App\Models\ActivityLog;
 use App\Services\HybridEncryptionService;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 
 class AdminDataController extends Controller
 {
@@ -17,37 +16,37 @@ class AdminDataController extends Controller
         $this->encryption = $encryption;
     }
 
-    // Memastikan hanya admin yang dapat mengelola data
+    // Memastikan administrator sudah terverifikasi menggunakan RSA
     private function pastikanAdmin()
     {
         abort_unless(
-            Auth::user() && Auth::user()->role === 'admin',
+            session('rsa_admin_authenticated') === true,
             403,
-            'Anda tidak memiliki izin untuk melakukan tindakan ini.'
+            'Akses ditolak. Autentikasi RSA diperlukan.'
         );
     }
 
-    // Mencatat aktivitas pengguna
-    private function catatAktivitas($aktivitas, $deskripsi)
+    // Mencatat aktivitas tanpa menyimpan informasi rahasia
+    private function catatAktivitas($aktivitas, $id)
     {
         ActivityLog::create([
-            'user_id' => Auth::id(),
+            'user_id' => null,
             'aktivitas' => $aktivitas,
-            'deskripsi' => $deskripsi,
+            'deskripsi' => 'ID data: ' . $id,
         ]);
     }
 
-    // Admin dan user dapat melihat seluruh daftar ciphertext
+    // Menampilkan daftar data terenkripsi
     public function index()
     {
         $data = AdminData::latest()->get();
 
-        $isAdmin = Auth::user()->role === 'admin';
+        $isAdmin = session('rsa_admin_authenticated') === true;
 
         return view('data.index', compact('data', 'isAdmin'));
     }
 
-    // Form tambah data hanya untuk admin
+    // Form tambah data
     public function create()
     {
         $this->pastikanAdmin();
@@ -55,7 +54,8 @@ class AdminDataController extends Controller
         return view('data.create');
     }
 
-    // Menyimpan data dengan enkripsi, hanya untuk admin
+    // Menambahkan data
+    // Catatan: proses store masih menggunakan enkripsi server-side.
     public function store(Request $request)
     {
         $this->pastikanAdmin();
@@ -65,107 +65,129 @@ class AdminDataController extends Controller
             'isi' => 'required|string',
         ]);
 
-        $encrypted = $this->encryption->encrypt($request->isi);
-
-        AdminData::create([
+        $plainText = json_encode([
             'judul' => $request->judul,
+            'isi' => $request->isi,
+        ], JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+
+        $encrypted = $this->encryption->encrypt($plainText);
+
+        $item = AdminData::create([
+            'judul' => 'Data terenkripsi',
             'encrypted_data' => $encrypted['encrypted_data'],
             'encrypted_key' => $encrypted['encrypted_key'],
             'iv' => $encrypted['iv'],
             'auth_tag' => $encrypted['auth_tag'],
-            'user_id' => Auth::id(),
+            'user_id' => null,
         ]);
 
-        $this->catatAktivitas(
-            'Tambah Data',
-            'Menambahkan dan mengenkripsi data: ' . $request->judul
-        );
+        $this->catatAktivitas('Tambah Data', $item->id);
 
         return redirect()->route('data.index')
             ->with('success', 'Data berhasil dienkripsi dan disimpan.');
     }
 
-    // Admin melihat hasil dekripsi, user hanya melihat ciphertext
+    // Menampilkan ciphertext dan halaman dekripsi browser
     public function show($id)
     {
         $item = AdminData::findOrFail($id);
 
-        $isAdmin = Auth::user()->role === 'admin';
+        $isAdmin = session('rsa_admin_authenticated') === true;
 
-        $isi = null;
-
-        if ($isAdmin) {
-            $isi = $this->encryption->decrypt(
-                $item->encrypted_data,
-                $item->encrypted_key,
-                $item->iv,
-                $item->auth_tag
-            );
-
-            $this->catatAktivitas(
-                'Dekripsi Data',
-                'Membuka dan mendekripsi data: ' . $item->judul
-            );
-        }
-
-        return view('data.show', compact('item', 'isi', 'isAdmin'));
+        return view('data.show', compact('item', 'isAdmin'));
     }
 
-    // Form edit hanya untuk admin
+    // Form edit data
     public function edit($id)
     {
         $this->pastikanAdmin();
 
         $item = AdminData::findOrFail($id);
 
-        return view('data.edit', compact('item'));
+        $isAdmin = session('rsa_admin_authenticated') === true;
+
+        // Membaca public key RSA
+        $publicKeyPath = storage_path('app/keys/public.pem');
+
+        if (!file_exists($publicKeyPath)) {
+            abort(500, 'Public key RSA tidak ditemukan.');
+        }
+
+        $publicKeyPem = file_get_contents($publicKeyPath);
+
+        return view('data.edit', compact(
+            'item',
+            'isAdmin',
+            'publicKeyPem'
+        ));
     }
 
-    // Memperbarui data hanya untuk admin
+    // Memperbarui data menggunakan ciphertext dari browser
     public function update(Request $request, $id)
     {
         $this->pastikanAdmin();
 
-        $request->validate([
-            'judul' => 'required|string|max:255',
-            'isi' => 'nullable|string',
+        // Validasi empat komponen enkripsi
+        $validated = $request->validate([
+            'encrypted_data' => 'required|string',
+            'encrypted_key' => 'required|string',
+            'iv' => 'required|string',
+            'auth_tag' => 'required|string',
         ]);
 
+        // Memastikan data yang diedit tersedia
         $item = AdminData::findOrFail($id);
 
-        $item->judul = $request->judul;
+        // Memeriksa format Base64 setiap komponen
+        foreach ([
+            'encrypted_data',
+            'encrypted_key',
+            'iv',
+            'auth_tag'
+        ] as $field) {
 
-        if ($request->filled('isi')) {
-            $encrypted = $this->encryption->encrypt($request->isi);
-
-            $item->encrypted_data = $encrypted['encrypted_data'];
-            $item->encrypted_key = $encrypted['encrypted_key'];
-            $item->iv = $encrypted['iv'];
-            $item->auth_tag = $encrypted['auth_tag'];
+            if (base64_decode($validated[$field], true) === false) {
+                return back()->withErrors([
+                    $field => 'Format data terenkripsi tidak valid.'
+                ]);
+            }
         }
 
-        $item->save();
+        // Memeriksa panjang IV dan authentication tag
+        $iv = base64_decode($validated['iv'], true);
+        $tag = base64_decode($validated['auth_tag'], true);
 
-        $this->catatAktivitas(
-            'Ubah Data',
-            'Mengubah data: ' . $item->judul
-        );
+        if (strlen($iv) !== 12 || strlen($tag) !== 16) {
+            return back()->withErrors([
+                'encrypted_data' => 'Format IV atau authentication tag tidak valid.'
+            ]);
+        }
+
+        // Memperbarui ciphertext tanpa menerima plaintext
+        $item->update([
+            'judul' => 'Data terenkripsi',
+            'encrypted_data' => $validated['encrypted_data'],
+            'encrypted_key' => $validated['encrypted_key'],
+            'iv' => $validated['iv'],
+            'auth_tag' => $validated['auth_tag'],
+            'user_id' => null,
+        ]);
+
+        // Mencatat aktivitas
+        $this->catatAktivitas('Ubah Data', $item->id);
 
         return redirect()->route('data.index')
-            ->with('success', 'Data berhasil diperbarui.');
+            ->with('success', 'Data berhasil diperbarui dan dienkripsi ulang di browser.');
     }
 
-    // Menghapus data hanya untuk admin
+    // Menghapus data
     public function destroy($id)
     {
         $this->pastikanAdmin();
 
         $item = AdminData::findOrFail($id);
 
-        $this->catatAktivitas(
-            'Hapus Data',
-            'Menghapus data: ' . $item->judul
-        );
+        $this->catatAktivitas('Hapus Data', $item->id);
 
         $item->delete();
 
